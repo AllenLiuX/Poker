@@ -94,8 +94,8 @@ class Hand:
         
     def calc(self):
         for card in self.cards:
-            self.points[0] += card.point-10 if card.point==11 else card.point
-            self.points[1] += card.point if self.points[1]+card.point<21 else (card.point-10 if card.point==11 else card.point)
+            self.points[0] += card.point-10 if card.point==11 else card.point   # A treated as 1
+            self.points[1] += card.point if self.points[1]+card.point<=21 else (card.point-10 if card.point==11 else card.point)    # A treated as 11 if not exceed
 
     def __str__(self) -> str:
         return str(self.points)
@@ -112,17 +112,40 @@ class Player:
         self.money = money
         self.hand = None
         self.second_hand = None
+        self.split_count = 0
 
-    def split_strategy(self, opponent_card: Card):
-        if self.hand[0] == self.hand[1]:
-            pass
+    def split_strategy(self, opponent_card: Card, deck: Deck, manual_mode: bool=False):
+        if self.hand[0].value != self.hand[1].value:
+            return
+        self_pos = self.hand[0].point-1 if self.hand[0].point!=11 else 0
+        oppo_pos = opponent_card.point-1 if opponent_card.point!=11 else 0
+        split = split_matrix[self_pos][oppo_pos]
+        if manual_mode:
+            split_choice = input("Split? (y/n): ")
+            split = 1 if split_choice=='y' else 0
+        if split:
+            pre_card = self.hand[0]
+            self.hand = Hand([pre_card, deck.get_card()])
+            self.second_hand = Hand([pre_card, deck.get_card()])
+            self.split_count += 1
+            print("-------- Split! Two hands:", self.hand, self.second_hand)
 
-
-    def strategy(self, deck, hand: Hand, opponent_card: Card) -> int:
-        while self.hand.points[1] < 17:
-            new_card = deck.get_card()
-            print('Player get one more card '+str(new_card))
-            self.hand += Hand([new_card])
+    def strategy(self, deck, hand: Hand, opponent_card: Card, manual_mode: bool=False) -> int:
+        if manual_mode:
+            while hand.points[1]<21:
+                add_choice = input("Add? (y/n): ")
+                if add_choice=='y':
+                    new_card = deck.get_card()
+                    print('Player get one more card '+str(new_card))
+                    hand += Hand([new_card])
+                elif add_choice=='n':
+                    break
+        else:
+            while hand.points[1] < 17:
+                new_card = deck.get_card()
+                print('Player get one more card '+str(new_card))
+                hand += Hand([new_card])
+        return hand
             
 
 class Bot:
@@ -135,44 +158,64 @@ class Bot:
             print('Bot get one more card '+str(new_card))
             self.hand += Hand([new_card])
             
-            # hand = Hand(hand.cards+[deck.get_card()])
-
 class Game:
     def __init__(self):
         self.deck = Deck(4)
         self.player = Player(1000)
         self.bot = Bot()
+        self.blackjack_count = 0
 
-    def play(self):
+    def play(self, manual_mode: bool = False, bet: int = 200):
         self.deck.check_deck()
-        # bet = int(input('Bet: '))
-        bet = 200
+        if manual_mode:
+            bet = int(input('Bet: '))
         self.player.hand = self.deck.get_a_hand()
+        self.player.second_hand = None
         self.bot.hand = self.deck.get_a_hand()
-        print('Player hand:', self.player.hand, 'Bot hand:', self.bot.hand)
-        self.player.strategy(self.deck, self.bot.hand[0])
-        self.bot.strategy(self.deck)
-        print('Player hand:', self.player.hand, 'Bot hand:', self.bot.hand)
-        player_point = self.player.hand.points[1]
-        bot_point = self.bot.hand.points[1]
-        if player_point > 21 or (player_point < bot_point and bot_point <= 21):
-            self.player.money -= bet
-            print('Player lose! Money: '+str(self.player.money))
-        elif player_point > bot_point or bot_point > 21:
-            self.player.money += bet
-            print('Player win! Money: '+str(self.player.money))
+        if manual_mode:
+            print('Player cards:', self.player.hand.cards, 'Bot cards:', self.bot.hand.cards[0], ', xx')
         else:
-            print('Draw! Money:'+str(self.player.money))
-        print('========================')
+            print('Player cards:', self.player.hand.cards, 'Bot cards:', self.bot.hand.cards)
+            print('Player points:', self.player.hand, 'Bot points:', self.bot.hand)
+        self.player.split_strategy(self.bot.hand[0], self.deck, manual_mode)
         
-    def begin(self):
+        self.player.hand = self.player.strategy(self.deck, self.player.hand, self.bot.hand[0], manual_mode)
+        if self.player.second_hand:
+            self.player.second_hand = self.player.strategy(self.deck, self.player.second_hand, self.bot.hand[0], manual_mode)
+        self.bot.strategy(self.deck)
+        self.compare(self.player, self.player.hand, self.bot.hand, bet)
+        if self.player.second_hand:
+            self.compare(self.player, self.player.second_hand, self.bot.hand, bet)
+            
+    def compare(self, player: Player, player_hand: Hand, bot_hand: Hand, bet: int):
+        print('Player hand:', player_hand, 'Bot hand:', bot_hand)
+        player_point = player_hand.points[1]
+        bot_point = bot_hand.points[1]
+        if player_point > 21 or (player_point < bot_point and bot_point <= 21):
+            player.money -= bet
+            print('Player lose! Money: '+str(player.money))
+        elif player_point > bot_point or bot_point > 21:
+            player.money += bet
+            # blackjack:
+            if player_point == 21 and len(player_hand.cards)==2:
+                player.money += bet*0.5
+                self.blackjack_count += 1
+                print("------ BlackJack!! ------")
+            print('Player win! Money: '+str(player.money))
+        else:
+            print('Draw! Money:'+str(player.money))
+        print('========================')
+
+    def begin(self, manual_mode: bool=False):
+        print("====== Game Begin! ======")
+        print(f"Total money: {self.player.money}")
         round = 0
         while self.player.money > 0:
-            self.play()
+            self.play(manual_mode)
             round += 1
             time.sleep(1)
-        print("Player loose all.")
-        print("Total round:", round)
+        print("Player lose all.")
+        print(f"Total round: {round}. Blackjack count: {self.blackjack_count}")
 
 if __name__=='__main__':
     deck = Deck(2)
@@ -187,4 +230,4 @@ if __name__=='__main__':
     # bot.strategy(deck)
 
     game = Game()
-    game.begin()
+    game.begin(manual_mode=True)
