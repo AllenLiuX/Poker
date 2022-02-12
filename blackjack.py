@@ -1,6 +1,9 @@
 import random
 import time
 import logging
+import matplotlib.pyplot as plt
+import seaborn as sns
+from dataclasses import dataclass, replace
 
 logging.basicConfig()
 # Constants
@@ -11,17 +14,31 @@ suit_value_dict = {"T": 10, "J": 11, "Q": 12, "K": 13, "A": 14}
 suit_point_dict = {"T": 10, "J": 10, "Q": 10, "K": 10, "A": 11}
 suit_dict = {'♠': 's', '♣': 'c', '♥': 'h', '♦': 'd'}
 split_matrix = [
-            [1,1,1,1,1,1,1,1,1,1],  # AA
-            [0,0,1,1,1,1,0,0,0,0],  # 22
-            [0,0,1,1,1,1,0,0,0,0],
-            [0,0,0,0,0,0,0,0,0,0],
-            [0,0,0,0,0,0,0,0,0,0],
-            [1,1,1,1,1,0,0,0,0,0],
-            [1,1,1,1,1,1,0,0,0,0],
-            [1,1,1,1,1,1,1,1,1,1],
-            [1,1,1,1,1,0,1,1,0,0],
-            [0,0,0,0,0,0,0,0,0,0]   #TT
-        ]
+        [1,1,1,1,1,1,1,1,1,1],  # AA
+        [0,0,1,1,1,1,0,0,0,0],  # 22
+        [0,0,1,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,0,0,0,0,0],
+        [1,1,1,1,1,1,0,0,0,0],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,0,1,1,0,0],
+        [0,0,0,0,0,0,0,0,0,0]   #TT
+    ]
+
+strategy_matrix = [ # 0 is stop, 1 is add, 2 is double
+        #2,3,4,5,6,7,8,9,T,A oppnent/player
+        [1,1,1,1,1,1,1,1,1,1],  # 8
+        [1,2,2,2,2,1,1,1,1,1],
+        [2,2,2,2,2,2,2,2,1,1],
+        [2,2,2,2,2,2,2,2,2,2],
+        [1,1,0,0,0,1,1,1,1,1],
+        [0,0,0,0,0,1,1,1,1,1],
+        [0,0,0,0,0,1,1,1,1,1],
+        [0,0,0,0,0,1,1,1,1,1],
+        [0,0,0,0,0,1,1,1,1,1],
+        [0,0,0,0,0,0,0,0,0,0],  # 17
+]
 
 suit2shape = {}
 for key, val in suit_dict.items():
@@ -118,7 +135,7 @@ class Player:
         if self.hand[0].value != self.hand[1].value:
             return
         self_pos = self.hand[0].point-1 if self.hand[0].point!=11 else 0
-        oppo_pos = opponent_card.point-1 if opponent_card.point!=11 else 0
+        oppo_pos = opponent_card.point-2
         split = split_matrix[self_pos][oppo_pos]
         if manual_mode:
             split_choice = input("Split? (y/n): ")
@@ -130,22 +147,37 @@ class Player:
             self.split_count += 1
             print("-------- Split! Two hands:", self.hand, self.second_hand)
 
-    def strategy(self, deck, hand: Hand, opponent_card: Card, manual_mode: bool=False) -> int:
+    def add_a_card(self, hand: Hand, deck: Deck):
+        new_card = deck.get_card()
+        print('Player get one more card '+str(new_card))
+        hand += Hand([new_card])
+        return hand
+    
+    def strategy(self, deck, hand: Hand, opponent_card: Card, manual_mode: bool=False) -> Hand:
+        bet_multiplier = 1
         if manual_mode:
             while hand.points[1]<21:
                 add_choice = input("Add? (y/n): ")
                 if add_choice=='y':
-                    new_card = deck.get_card()
-                    print('Player get one more card '+str(new_card))
-                    hand += Hand([new_card])
+                    hand = self.add_a_card(hand, deck)
                 elif add_choice=='n':
                     break
         else:
+            while hand.points[1] < 9:
+                hand = self.add_a_card(hand, deck)
             while hand.points[1] < 17:
-                new_card = deck.get_card()
-                print('Player get one more card '+str(new_card))
-                hand += Hand([new_card])
-        return hand
+                strat = strategy_matrix[hand.points[1]-8][opponent_card.point-2]
+                if strat == 0:
+                    break
+                elif strat == 1:
+                    hand = self.add_a_card(hand, deck)
+                elif strat == 2:
+                    if len(hand.cards) == 2:
+                        print("----- Double Bet! -----")
+                        bet_multiplier = 2
+                    hand = self.add_a_card(hand, deck)
+                    break
+        return hand, bet_multiplier
             
 
 class Bot:
@@ -157,18 +189,29 @@ class Bot:
             new_card = deck.get_card()
             print('Bot get one more card '+str(new_card))
             self.hand += Hand([new_card])
-            
-class Game:
-    def __init__(self):
-        self.deck = Deck(4)
-        self.player = Player(1000)
-        self.bot = Bot()
-        self.blackjack_count = 0
 
+@dataclass
+class Result:
+    win: int = 0
+    lose: int = 0
+    draw: int = 0
+
+class Game:
+    def __init__(self, money: int = 2000, blackjack_ratio=0.2, commission=0):
+        self.deck = Deck(4)
+        self.player = Player(money)
+        self.bot = Bot()
+        self.blackjack_ratio = blackjack_ratio
+        self.blackjack_count = 0
+        self.result = Result()
+        self.commission = commission
+        
     def play(self, manual_mode: bool = False, bet: int = 200):
         self.deck.check_deck()
         if manual_mode:
             bet = int(input('Bet: '))
+        # bet = self.player.money*0.03
+        bet_multiplier_1, bet_multiplier_2 = 1, 1
         self.player.hand = self.deck.get_a_hand()
         self.player.second_hand = None
         self.bot.hand = self.deck.get_a_hand()
@@ -179,55 +222,77 @@ class Game:
             print('Player points:', self.player.hand, 'Bot points:', self.bot.hand)
         self.player.split_strategy(self.bot.hand[0], self.deck, manual_mode)
         
-        self.player.hand = self.player.strategy(self.deck, self.player.hand, self.bot.hand[0], manual_mode)
+        self.player.hand, bet_multiplier_1 = self.player.strategy(self.deck, self.player.hand, self.bot.hand[0], manual_mode)
         if self.player.second_hand:
-            self.player.second_hand = self.player.strategy(self.deck, self.player.second_hand, self.bot.hand[0], manual_mode)
+            print("For second hand:")
+            self.player.second_hand, bet_multiplier_2 = self.player.strategy(self.deck, self.player.second_hand, self.bot.hand[0], manual_mode)
         self.bot.strategy(self.deck)
-        self.compare(self.player, self.player.hand, self.bot.hand, bet)
+        self.compare(self.player, self.player.hand, self.bot.hand, bet*bet_multiplier_1)
         if self.player.second_hand:
-            self.compare(self.player, self.player.second_hand, self.bot.hand, bet)
+            self.compare(self.player, self.player.second_hand, self.bot.hand, bet*bet_multiplier_2)
+        self.player.money -= self.commission
             
     def compare(self, player: Player, player_hand: Hand, bot_hand: Hand, bet: int):
-        print('Player hand:', player_hand, 'Bot hand:', bot_hand)
+        print('Player point:', player_hand.points[1], 'Bot point:', bot_hand.points[1])
         player_point = player_hand.points[1]
         bot_point = bot_hand.points[1]
-        if player_point > 21 or (player_point < bot_point and bot_point <= 21):
+        if player_point > 21 or (player_point < bot_point and bot_point <= 21) or bot_point==21:
             player.money -= bet
+            self.result.lose += 1
             print('Player lose! Money: '+str(player.money))
         elif player_point > bot_point or bot_point > 21:
             player.money += bet
             # blackjack:
             if player_point == 21 and len(player_hand.cards)==2:
-                player.money += bet*0.5
+                player.money += bet*self.blackjack_ratio
                 self.blackjack_count += 1
                 print("------ BlackJack!! ------")
+            self.result.win += 1
             print('Player win! Money: '+str(player.money))
         else:
+            self.result.draw += 1
             print('Draw! Money:'+str(player.money))
         print('========================')
 
-    def begin(self, manual_mode: bool=False):
+    def simulate(self, manual_mode: bool=False, bet:int = 200, iterations:int = 1000):
         print("====== Game Begin! ======")
         print(f"Total money: {self.player.money}")
         round = 0
-        while self.player.money > 0:
-            self.play(manual_mode)
+        money_data = []
+        while self.player.money > 0 and round < iterations:
+            self.play(manual_mode=manual_mode, bet=bet)
+            print(f"Round #{round}")
             round += 1
-            time.sleep(1)
-        print("Player lose all.")
+            money_data.append(self.player.money)
+            # time.sleep(1)
+        # print("Player lose all.")
         print(f"Total round: {round}. Blackjack count: {self.blackjack_count}")
+        return money_data
 
-if __name__=='__main__':
+
+def plot(data):
+    plt.figure(figsize=(20,6))
+    sns.lineplot(list(range(len(data))), data)
+    plt.show()
+
+def unit_test():
+    # Deck
     deck = Deck(2)
     print(sorted(deck.deck))
+
+    # Hand
     hand = Hand([Card('7s'), Card('As'), Card('As')])
-    
     hand += Hand([Card('2c')])
     print(hand.cards)
     print(hand)
 
-    # bot  = Bot()
-    # bot.strategy(deck)
+    # Bot
+    bot  = Bot()
+    bot.strategy(deck)
 
-    game = Game()
-    game.begin(manual_mode=True)
+if __name__=='__main__':
+    game = Game(money=1000, blackjack_ratio=0.2, commission=0)
+    data = game.simulate(manual_mode=False, bet=30, iterations=2000)
+    print(game.result)
+    plot(data)
+    
