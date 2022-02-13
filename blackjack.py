@@ -1,11 +1,20 @@
 import random
-import time
 import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-logging.basicConfig()
+
+def set_logger():
+    # LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+    LOG_FORMAT = "%(message)s"
+    logging.basicConfig(filename='test.log', level=logging.INFO, format=LOG_FORMAT, filemode='w')
+    # info_filter = logging.Filter()
+    # info_filter.filter = lambda record: record.level == logging.INFO
+    # logging.basicConfig(filename='test.log', level=logging.INFO, format=LOG_FORMAT, handlers=info_filter)
+
+set_logger()
+
 # Constants
 suit_index_dict = {"s": 0, "c": 1, "h": 2, "d": 3}
 reverse_suit_index = ("s", "c", "h", "d")
@@ -90,12 +99,12 @@ class Deck:
 
     def check_deck(self):
         if len(self.deck)<10:
-            print('New deck')
+            logging.info('New deck')
             self.new_deck(self.deck_num)
 
     def get_card(self):
         if not self.deck:
-            print('New deck')
+            logging.info('New deck')
             self.new_deck(self.deck_num)
         card = self.deck.pop(0)
         return card
@@ -145,11 +154,11 @@ class Player:
             self.hand = Hand([pre_card, deck.get_card()])
             self.second_hand = Hand([pre_card, deck.get_card()])
             self.split_count += 1
-            print("-------- Split! Two hands:", self.hand, self.second_hand)
+            logging.info(f"-------- Split! Two hands: {self.hand}, {self.second_hand}")
 
     def add_a_card(self, hand: Hand, deck: Deck):
         new_card = deck.get_card()
-        print('Player get one more card '+str(new_card))
+        logging.info(f'Player get one more card {new_card}')
         hand += Hand([new_card])
         return hand
     
@@ -173,7 +182,7 @@ class Player:
                     hand = self.add_a_card(hand, deck)
                 elif strat == 2:
                     if len(hand.cards) == 2:
-                        print("----- Double Bet! -----")
+                        logging.info("----- Double Bet! -----")
                         bet_multiplier = 2
                     hand = self.add_a_card(hand, deck)
                     break
@@ -187,7 +196,7 @@ class Bot:
     def strategy(self, deck):
         while self.hand.points[0] < 17:
             new_card = deck.get_card()
-            print('Bot get one more card '+str(new_card))
+            logging.info(f'Bot get one more card {new_card}')
             self.hand += Hand([new_card])
 
 @dataclass
@@ -203,7 +212,7 @@ class Game:
         self.bot = Bot()
         self.blackjack_ratio = blackjack_ratio
         self.blackjack_count = 0
-        self.result = Result()
+        self.result: Result = Result()
         self.commission = commission
         
     def play(self, manual_mode: bool = False, bet: int = 200):
@@ -216,15 +225,15 @@ class Game:
         self.player.second_hand = None
         self.bot.hand = self.deck.get_a_hand()
         if manual_mode:
-            print('Player cards:', self.player.hand.cards, 'Bot cards:', self.bot.hand.cards[0], ', xx')
+            logging.info(f'Player cards: {self.player.hand.cards}, Bot cards:{self.bot.hand.cards[0]}, xx')
         else:
-            print('Player cards:', self.player.hand.cards, 'Bot cards:', self.bot.hand.cards)
-            print('Player points:', self.player.hand, 'Bot points:', self.bot.hand)
+            logging.info(f'Player cards: {self.player.hand.cards}, Bot cards:{self.bot.hand.cards}')
+            logging.info(f'Player points: {self.player.hand}, Bot points:{self.bot.hand}')
         self.player.split_strategy(self.bot.hand[0], self.deck, manual_mode)
         
         self.player.hand, bet_multiplier_1 = self.player.strategy(self.deck, self.player.hand, self.bot.hand[0], manual_mode)
         if self.player.second_hand:
-            print("For second hand:")
+            logging.info("For second hand:")
             self.player.second_hand, bet_multiplier_2 = self.player.strategy(self.deck, self.player.second_hand, self.bot.hand[0], manual_mode)
         self.bot.strategy(self.deck)
         self.compare(self.player, self.player.hand, self.bot.hand, bet*bet_multiplier_1)
@@ -233,66 +242,62 @@ class Game:
         self.player.money -= self.commission
             
     def compare(self, player: Player, player_hand: Hand, bot_hand: Hand, bet: int):
-        print('Player point:', player_hand.points[1], 'Bot point:', bot_hand.points[1])
+        logging.info(f'Player point: {player_hand.points[1]}, Bot point: {bot_hand.points[1]}')
         player_point = player_hand.points[1]
         bot_point = bot_hand.points[1]
         if player_point > 21 or (player_point < bot_point and bot_point <= 21) or bot_point==21:
             player.money -= bet
             self.result.lose += 1
-            print('Player lose! Money: '+str(player.money))
+            logging.info('Player lose! Money: '+str(player.money))
         elif player_point > bot_point or bot_point > 21:
             player.money += bet
             # blackjack:
             if player_point == 21 and len(player_hand.cards)==2:
                 player.money += bet*self.blackjack_ratio
                 self.blackjack_count += 1
-                print("------ BlackJack!! ------")
+                logging.info("------ BlackJack!! ------")
             self.result.win += 1
-            print('Player win! Money: '+str(player.money))
+            logging.info('Player win! Money: '+str(player.money))
         else:
             self.result.draw += 1
-            print('Draw! Money:'+str(player.money))
-        print('========================')
+            logging.info('Draw! Money:'+str(player.money))
+        logging.info('========================')
 
     def simulate(self, manual_mode: bool=False, bet:int = 200, iterations:int = 1000):
-        print("====== Game Begin! ======")
-        print(f"Total money: {self.player.money}")
+        logging.info("====== Game Begin! ======")
+        logging.info(f"Total money: {self.player.money}")
         round = 0
         money_data = []
         while self.player.money > 0 and round < iterations:
             self.play(manual_mode=manual_mode, bet=bet)
-            print(f"Round #{round}")
+            logging.info(f"Round #{round}")
             round += 1
             money_data.append(self.player.money)
             # time.sleep(1)
-        # print("Player lose all.")
-        print(f"Total round: {round}. Blackjack count: {self.blackjack_count}")
+        # logging.info("Player lose all.")
+        logging.info(f"Total round: {round}. Blackjack count: {self.blackjack_count}")
         return money_data
 
 
-def plot(data):
-    plt.figure(figsize=(20,6))
-    sns.lineplot(list(range(len(data))), data)
-    plt.show()
 
 def unit_test():
     # Deck
     deck = Deck(2)
-    print(sorted(deck.deck))
+    logging.info(str(sorted(deck.deck)))
 
     # Hand
     hand = Hand([Card('7s'), Card('As'), Card('As')])
     hand += Hand([Card('2c')])
-    print(hand.cards)
-    print(hand)
+    logging.info(hand.cards)
+    logging.info(hand)
 
     # Bot
     bot  = Bot()
     bot.strategy(deck)
 
 if __name__=='__main__':
-    game = Game(money=1000, blackjack_ratio=0.2, commission=0)
-    data = game.simulate(manual_mode=False, bet=30, iterations=2000)
-    print(game.result)
-    plot(data)
+    game = Game(money=1000, blackjack_ratio=0.3, commission=0)
+    data = game.simulate(manual_mode=False, bet=30, iterations=1000)
+    logging.info(str(game.result))
+    # plot(data)
     
